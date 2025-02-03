@@ -54,11 +54,20 @@ class MovieDatabase:
         
         return fields
 
+
     def search_movies(self, query: str, page: int = 1, page_size: int = 50) -> Dict[str, Any]:
-        """搜索电影"""
+        """
+        搜索电影
+        query: 用户输入的查询字符串
+        page: 当前页码
+        page_size: 每页显示的电影数量
+        return: 包含电影列表和分页信息的字典
+        """
         parsed_query = self.parse_query(query)
         offset = (page - 1) * page_size
         
+
+
         base_sql = """
             SELECT DISTINCT 
                 movies.id,
@@ -174,54 +183,68 @@ class MovieDatabase:
         
         base_sql = """
             SELECT DISTINCT 
-                m.id,
-                m.title,
-                m.director,
-                m.plot,
-                m.score,
-                m.release_date,
-                m.poster,
-                GROUP_CONCAT(DISTINCT a.name) as actors,
-                GROUP_CONCAT(DISTINCT g.name) as genres
-            FROM movies m
-            LEFT JOIN movie_cast mc ON m.id = mc.movie_id
-            LEFT JOIN actors a ON mc.actor_id = a.id
-            LEFT JOIN movie_genres mg ON m.id = mg.movie_id
-            LEFT JOIN genres g ON mg.genre_id = g.id
+                movies.id,
+                movies.title,
+                movies.director,
+                movies.plot,
+                movies.score,
+                movies.release_date,
+                movies.poster,
+                GROUP_CONCAT(DISTINCT actors.name) as actors,
+                GROUP_CONCAT(DISTINCT genres.name) as genres
+            FROM movies
+            LEFT JOIN movie_cast ON movies.id = movie_cast.movie_id
+            LEFT JOIN actors ON movie_cast.actor_id = actors.id
+            LEFT JOIN movie_genres ON movies.id = movie_genres.movie_id
+            LEFT JOIN genres ON movie_genres.genre_id = genres.id
             WHERE 1=1
         """
         
         params = []
         
         if category:
-            base_sql += " AND g.name = %s"
+            base_sql += " AND genres.name = %s"
             params.append(category)
         
         # 构建排序条件
         sort_conditions = []
         for sort_field in sort_by.split(','):
             if sort_field == 'score':
-                sort_conditions.append('m.score DESC')
+                sort_conditions.append('movies.score DESC')
             elif sort_field == 'date':
-                sort_conditions.append('m.release_date DESC')
+                sort_conditions.append('movies.release_date DESC')
         
         if not sort_conditions:
-            sort_conditions = ['m.score DESC']
+            sort_conditions = ['movies.score DESC']
         
         # 计算总数
-        count_sql = f"SELECT COUNT(DISTINCT m.id) as total FROM ({base_sql}) as t"
+        count_sql = """
+            SELECT COUNT(DISTINCT movies.id) as total 
+            FROM movies
+            LEFT JOIN movie_cast ON movies.id = movie_cast.movie_id
+            LEFT JOIN actors ON movie_cast.actor_id = actors.id
+            LEFT JOIN movie_genres ON movies.id = movie_genres.movie_id
+            LEFT JOIN genres ON movie_genres.genre_id = genres.id
+            WHERE 1=1
+        """
+        
+        if category:
+            count_sql += " AND genres.name = %s"
+        
+        # 执行计数查询
         self.cursor.execute(count_sql, params)
         total = self.cursor.fetchone()['total']
         
         # 添加分组和排序
         base_sql += f"""
-            GROUP BY m.id
+            GROUP BY movies.id
             ORDER BY {', '.join(sort_conditions)}
             LIMIT %s OFFSET %s
         """
         
-        params.extend([page_size, offset])
-        self.cursor.execute(base_sql, params)
+        # 执行主查询
+        all_params = params + [page_size, offset]
+        self.cursor.execute(base_sql, all_params)
         results = self.cursor.fetchall()
         
         # 处理日期格式
@@ -283,6 +306,7 @@ class MovieDatabase:
 # 创建数据库连接池
 db = MovieDatabase()
 
+# 搜索电影
 @app.route('/api/search', methods=['GET'])
 def search():
     try:
@@ -296,6 +320,7 @@ def search():
         logger.error(f"Search error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# 获取电影推荐
 @app.route('/api/movies', methods=['GET'])
 def get_movies():
     try:
@@ -310,6 +335,7 @@ def get_movies():
         logger.error(f"Get movies error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# 获取所有电影类型
 @app.route('/api/genres', methods=['GET'])
 def get_genres():
     try:
@@ -319,10 +345,12 @@ def get_genres():
         logger.error(f"Get genres error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# 错误处理
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'error': 'Not found'}), 404
 
+# 内部服务器错误处理
 @app.errorhandler(500)
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
