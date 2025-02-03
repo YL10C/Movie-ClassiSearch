@@ -1,8 +1,19 @@
+from flask import Flask, request, jsonify
+from typing import List, Dict, Any
 import mysql.connector
 import re
-from typing import List, Dict, Any
+from datetime import datetime
+from flask_cors import CORS
+import logging
 
-class MovieSearchEngine:
+app = Flask(__name__)
+CORS(app)  # 启用CORS支持
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class MovieDatabase:
     def __init__(self):
         self.conn = mysql.connector.connect(
             host='localhost',
@@ -11,27 +22,10 @@ class MovieSearchEngine:
             database='movie_search'
         )
         self.cursor = self.conn.cursor(dictionary=True)
-        self._ensure_fulltext_indexes()
 
-    def _ensure_fulltext_indexes(self):
-        """确保必要的全文索引存在"""
-        try:
-            # 为movies表添加全文索引
-            self.cursor.execute("""
-                ALTER TABLE movies 
-                ADD FULLTEXT INDEX idx_movie_search (title, plot)
-            """)
-            
-            # 为actors表添加全文索引
-            self.cursor.execute("""
-                ALTER TABLE actors 
-                ADD FULLTEXT INDEX idx_actor_name (name)
-            """)
-            
-            self.conn.commit()
-        except mysql.connector.Error:
-            # 索引可能已经存在，忽略错误
-            pass
+    def close(self):
+        self.cursor.close()
+        self.conn.close()
 
     def parse_query(self, query: str) -> Dict[str, str]:
         """解析用户输入的查询字符串"""
@@ -42,34 +36,143 @@ class MovieSearchEngine:
             'plot': ''
         }
         
-        # 使用正则表达式匹配字段模式
         patterns = {
-            'title': r'title:\s*([^:]+)(?=\s+\w+:|$)',
-            'director': r'director:\s*([^:]+)(?=\s+\w+:|$)',
-            'actor': r'actor:\s*([^:]+)(?=\s+\w+:|$)',
-            'plot': r'plot:\s*([^:]+)(?=\s+\w+:|$)'
+            'title': r'title:\s*(.+?)(?=\s+director:|actor:|plot:|$)',
+            'director': r'director:\s*(.+?)(?=\s+title:|actor:|plot:|$)',
+            'actor': r'actor:\s*(.+?)(?=\s+director:|title:|plot:|$)',
+            'plot': r'plot:\s*(.+?)(?=\s+director:|title:|actor:|$)'
         }
         
-        # 提取指定的字段
         for field, pattern in patterns.items():
             match = re.search(pattern, query, re.IGNORECASE)
             if match:
                 fields[field] = match.group(1).strip()
-                # 从查询字符串中移除已匹配的部分
                 query = query.replace(match.group(0), '').strip()
         
-        # 如果还有剩余的查询文本，将其作为title搜索
         if query and not any(fields.values()):
             fields['title'] = query
         
         return fields
 
-    def search(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """执行搜索并返回结果"""
+    def search_movies(self, query: str, page: int = 1, page_size: int = 50) -> Dict[str, Any]:
+        """搜索电影"""
         parsed_query = self.parse_query(query)
+        offset = (page - 1) * page_size
         
-        # 构建搜索SQL
-        sql = """
+        base_sql = """
+            SELECT DISTINCT 
+                movies.id,
+                movies.title,
+                movies.director,
+                movies.plot,
+                movies.score,
+                movies.release_date,
+                movies.poster,
+                GROUP_CONCAT(DISTINCT actors.name) as actors,
+                GROUP_CONCAT(DISTINCT genres.name) as genres,
+                (
+                    CASE 
+                        WHEN movies.title LIKE %s THEN 4
+                        ELSE 0 
+                    END +
+                    CASE 
+                        WHEN movies.director LIKE %s THEN 3
+                        ELSE 0 
+                    END +
+                    CASE 
+                        WHEN movies.plot LIKE %s THEN 2
+                        ELSE 0 
+                    END
+                ) as relevance
+            FROM movies
+            LEFT JOIN movie_cast ON movies.id = movie_cast.movie_id
+            LEFT JOIN actors ON movie_cast.actor_id = actors.id
+            LEFT JOIN movie_genres ON movies.id = movie_genres.movie_id
+            LEFT JOIN genres ON movie_genres.genre_id = genres.id
+            WHERE 1=1
+        """
+        
+        params = []
+        where_clauses = []
+        
+        if parsed_query['title']:
+            where_clauses.append("movies.title LIKE %s")
+            params.append(f"%{parsed_query['title']}%")
+        
+        if parsed_query['director']:
+            where_clauses.append("movies.director LIKE %s")
+            params.append(f"%{parsed_query['director']}%")
+        
+        if parsed_query['actor']:
+            where_clauses.append("actors.name LIKE %s")
+            params.append(f"%{parsed_query['actor']}%")
+        
+        if parsed_query['plot']:
+            where_clauses.append("movies.plot LIKE %s")
+            params.append(f"%{parsed_query['plot']}%")
+        
+        if where_clauses:
+            base_sql += " AND " + " AND ".join(where_clauses)
+        
+        # 计算总数的SQL
+        count_sql = """
+            SELECT COUNT(DISTINCT movies.id) as total 
+            FROM movies
+            LEFT JOIN movie_cast ON movies.id = movie_cast.movie_id
+            LEFT JOIN actors ON movie_cast.actor_id = actors.id
+            LEFT JOIN movie_genres ON movies.id = movie_genres.movie_id
+            LEFT JOIN genres ON movie_genres.genre_id = genres.id
+            WHERE 1=1
+        """
+        
+        if where_clauses:
+            count_sql += " AND " + " AND ".join(where_clauses)
+        
+        # 添加分组和排序
+        base_sql += """
+            GROUP BY movies.id
+            ORDER BY relevance DESC, movies.score DESC
+            LIMIT %s OFFSET %s
+        """
+        
+        # 添加评分参数
+        score_params = [
+            f"%{parsed_query['title']}%" if parsed_query['title'] else '%',
+            f"%{parsed_query['director']}%" if parsed_query['director'] else '%',
+            f"%{parsed_query['plot']}%" if parsed_query['plot'] else '%'
+        ]
+        
+        # 执行计数查询
+        self.cursor.execute(count_sql, params)
+        total = self.cursor.fetchone()['total']
+        
+        # 执行主查询
+        all_params = score_params + params + [page_size, offset]
+        self.cursor.execute(base_sql, all_params)
+        results = self.cursor.fetchall()
+        
+        # 处理日期格式
+        for movie in results:
+            if movie['release_date']:
+                movie['release_date'] = movie['release_date'].strftime('%Y-%m-%d')
+        
+        return {
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total + page_size - 1) // page_size,
+            'results': results
+        }
+
+    def get_movie_recommendations(self, 
+                                category: str = None, 
+                                sort_by: str = 'score', 
+                                page: int = 1, 
+                                page_size: int = 20) -> Dict[str, Any]:
+        """获取电影推荐"""
+        offset = (page - 1) * page_size
+        
+        base_sql = """
             SELECT DISTINCT 
                 m.id,
                 m.title,
@@ -77,22 +180,9 @@ class MovieSearchEngine:
                 m.plot,
                 m.score,
                 m.release_date,
+                m.poster,
                 GROUP_CONCAT(DISTINCT a.name) as actors,
-                GROUP_CONCAT(DISTINCT g.name) as genres,
-                (
-                    CASE 
-                        WHEN MATCH(m.title) AGAINST(%s IN BOOLEAN MODE) THEN 4
-                        ELSE 0 
-                    END +
-                    CASE 
-                        WHEN m.director LIKE %s THEN 3
-                        ELSE 0 
-                    END +
-                    CASE 
-                        WHEN MATCH(m.plot) AGAINST(%s IN BOOLEAN MODE) THEN 2
-                        ELSE 0 
-                    END
-                ) as relevance
+                GROUP_CONCAT(DISTINCT g.name) as genres
             FROM movies m
             LEFT JOIN movie_cast mc ON m.id = mc.movie_id
             LEFT JOIN actors a ON mc.actor_id = a.id
@@ -102,72 +192,140 @@ class MovieSearchEngine:
         """
         
         params = []
-        where_clauses = []
         
-        # 添加标题搜索条件
-        if parsed_query['title']:
-            where_clauses.append("MATCH(m.title) AGAINST(%s IN BOOLEAN MODE)")
-            params.append(f"*{parsed_query['title']}*")
+        if category:
+            base_sql += " AND g.name = %s"
+            params.append(category)
         
-        # 添加导演搜索条件
-        if parsed_query['director']:
-            where_clauses.append("m.director LIKE %s")
-            params.append(f"%{parsed_query['director']}%")
+        # 构建排序条件
+        sort_conditions = []
+        for sort_field in sort_by.split(','):
+            if sort_field == 'score':
+                sort_conditions.append('m.score DESC')
+            elif sort_field == 'date':
+                sort_conditions.append('m.release_date DESC')
         
-        # 添加演员搜索条件
-        if parsed_query['actor']:
-            where_clauses.append("a.name LIKE %s")
-            params.append(f"%{parsed_query['actor']}%")
+        if not sort_conditions:
+            sort_conditions = ['m.score DESC']
         
-        # 添加剧情搜索条件
-        if parsed_query['plot']:
-            where_clauses.append("MATCH(m.plot) AGAINST(%s IN BOOLEAN MODE)")
-            params.append(f"*{parsed_query['plot']}*")
-        
-        # 添加WHERE子句
-        if where_clauses:
-            sql += " AND " + " AND ".join(where_clauses)
+        # 计算总数
+        count_sql = f"SELECT COUNT(DISTINCT m.id) as total FROM ({base_sql}) as t"
+        self.cursor.execute(count_sql, params)
+        total = self.cursor.fetchone()['total']
         
         # 添加分组和排序
-        sql += """
+        base_sql += f"""
             GROUP BY m.id
-            ORDER BY relevance DESC, m.score DESC
-            LIMIT %s
+            ORDER BY {', '.join(sort_conditions)}
+            LIMIT %s OFFSET %s
         """
-        params.extend([parsed_query['title'] or '', 
-                      f"%{parsed_query['director']}%" if parsed_query['director'] else '%',
-                      parsed_query['plot'] or '',
-                      limit])
         
-        # 执行查询
-        self.cursor.execute(sql, params)
+        params.extend([page_size, offset])
+        self.cursor.execute(base_sql, params)
         results = self.cursor.fetchall()
         
-        return results
-
-    def close(self):
-        """关闭数据库连接"""
-        self.cursor.close()
-        self.conn.close()
-
-# 使用示例
-if __name__ == "__main__":
-    search_engine = MovieSearchEngine()
-    try:
-        # 测试查询
-        query = input("请输入搜索条件（例如 title: Avatar director: Cameron）: ")
-        results = search_engine.search(query)
-        
-        print(f"\n找到 {len(results)} 个结果：")
+        # 处理日期格式
         for movie in results:
-            print(f"\n标题: {movie['title']}")
-            print(f"导演: {movie['director']}")
-            print(f"演员: {movie['actors']}")
-            print(f"类型: {movie['genres']}")
-            print(f"评分: {movie['score']}")
-            print(f"上映日期: {movie['release_date']}")
-            print(f"相关度: {movie['relevance']}")
-            print("-" * 50)
+            if movie['release_date']:
+                movie['release_date'] = movie['release_date'].strftime('%Y-%m-%d')
+        
+        return {
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total + page_size - 1) // page_size,
+            'results': results
+        }
+
+    def get_genres(self) -> List[str]:
+        """获取所有电影类型"""
+        self.cursor.execute("SELECT DISTINCT name FROM genres ORDER BY name")
+        return [row['name'] for row in self.cursor.fetchall()]
+
+    def _ensure_fulltext_indexes(self):
+        """确保必要的全文索引存在"""
+        try:
+            # 检查索引是否存在
+            self.cursor.execute("""
+                SELECT INDEX_NAME 
+                FROM information_schema.STATISTICS 
+                WHERE TABLE_SCHEMA = 'movie_search' 
+                AND TABLE_NAME = 'movies' 
+                AND INDEX_NAME = 'idx_title_plot'
+            """)
             
-    finally:
-        search_engine.close() 
+            if not self.cursor.fetchone():
+                # 为movies表添加全文索引
+                self.cursor.execute("""
+                    ALTER TABLE movies 
+                    ADD FULLTEXT INDEX idx_title_plot (title, plot)
+                """)
+                
+            self.cursor.execute("""
+                SELECT INDEX_NAME 
+                FROM information_schema.STATISTICS 
+                WHERE TABLE_SCHEMA = 'movie_search' 
+                AND TABLE_NAME = 'actors' 
+                AND INDEX_NAME = 'idx_actor_name'
+            """)
+            
+            if not self.cursor.fetchone():
+                # 为actors表添加全文索引
+                self.cursor.execute("""
+                    ALTER TABLE actors 
+                    ADD FULLTEXT INDEX idx_actor_name (name)
+                """)
+                
+            self.conn.commit()
+        except mysql.connector.Error as err:
+            logger.error(f"创建索引时出错: {err}")
+
+# 创建数据库连接池
+db = MovieDatabase()
+
+@app.route('/api/search', methods=['GET'])
+def search():
+    try:
+        query = request.args.get('query', '')
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 50))
+        
+        results = db.search_movies(query, page, page_size)
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Search error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/movies', methods=['GET'])
+def get_movies():
+    try:
+        category = request.args.get('category')
+        sort_by = request.args.get('sort_by', 'score')
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 20))
+        
+        results = db.get_movie_recommendations(category, sort_by, page, page_size)
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Get movies error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/genres', methods=['GET'])
+def get_genres():
+    try:
+        genres = db.get_genres()
+        return jsonify({'genres': genres})
+    except Exception as e:
+        logger.error(f"Get genres error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000) 
