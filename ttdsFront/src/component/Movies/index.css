@@ -1,0 +1,68 @@
+/* Movies.css */
+
+.movies-container {
+  margin: 20px;
+}
+
+.filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.filter-select {
+  width: 200px;
+}
+
+.movies-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.movie-card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: box-shadow 0.3s ease;
+}
+
+.movie-card:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.movie-poster {
+  width: 100%;
+  height: auto;
+}
+
+.movie-info {
+  padding: 10px;
+}
+
+.movie-title {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.movie-director,
+.movie-score,
+.movie-date,
+.movie-genres,
+.movie-actors,
+.movie-plot {
+  font-size: 14px;
+  margin: 5px 0;
+}
+
+.movies-pagination {
+  position: fixed;  
+  bottom: 20px;      
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  text-align: center;
+  background: white; 
+  padding: 10px 0;
+  z-index: 10;
+}

@@ -22,17 +22,47 @@ except FileNotFoundError:
 except json.JSONDecodeError:
     print(f"文件 {file_path} 不是有效的JSON格式。")
 
-@app.route('/search', methods=['GET'])
+@app.route('/api/search', methods=['GET'])
 def search():
     query = request.args.get('query', '')
-    print(query)
-    results = []
+    results = {'results': []}
     for movie in data:
         if query in movie['title']:
             movie['url'] = 'https://www.imdb.com/title/' + movie['id']
-            results.append(movie)
-    print(jsonify(results))
-    return jsonify(results)
+            results['results'].append(movie)
+    results['total'] = len(results['results'])
+    results['page'] = 1
+    results['page_size'] = 20
+    results['total_pages'] = len(results['results']) // 20 + 1
+    
+    return results
+
+@app.route('/api/movies', methods=['GET'])
+def get_movies():
+    query = request.args.get('query', '')
+    results = {'results': []}
+    for movie in data:
+        if query in movie['title']:
+            movie['url'] = 'https://www.imdb.com/title/' + movie['id']
+            results['results'].append(movie)
+    results['total'] = len(results['results'])
+    results['page'] = 1
+    results['page_size'] = 20
+    results['total_pages'] = len(results['results']) // 20 + 1
+    
+    return results
+
+@app.route('/api/genres', methods=['GET'])
+def get_genres():
+    results = {
+            "genres": [
+                "Action",
+                "Comedy",
+                "Drama",
+            ]
+            }
+    
+    return results
 
 if __name__ == '__main__':
     app.run(debug=True)
