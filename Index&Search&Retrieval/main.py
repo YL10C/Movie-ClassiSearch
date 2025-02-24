@@ -44,14 +44,14 @@ if __name__ == "__main__":
     # 创建查询处理对象
     query_processor = QueryProcessor(index, preprocessor)
 
-    # 简单普通查询示例
-    simple_query = r'title:Can\'t Escape AND "young artist becomes"'
+    # # 简单普通查询示例
+    # simple_query = r'title:Can\'t Escape AND "young artist becomes"'
     
-    # 判断查询语句是否包含字段限定符、布尔运算符或引号
-    if any(field in simple_query for field in ['title:', 'director:', 'plot:', 'cast:']) or \
-       any(op in simple_query for op in ['AND', 'OR']) or \
-       '"' in simple_query:
-        simple_results = query_processor.query(simple_query)
-        print("简单查询结果:", simple_results)
-    else:
-        print("查询语句不包含有效的字段或运算符。")
+    # # 判断查询语句是否包含字段限定符、布尔运算符或引号
+    # if any(field in simple_query for field in ['title:', 'director:', 'plot:', 'cast:']) or \
+    #    any(op in simple_query for op in ['AND', 'OR']) or \
+    #    '"' in simple_query:
+    #     simple_results = query_processor.query(simple_query)
+    #     print("简单查询结果:", simple_results)
+    # else:
+    #     print("查询语句不包含有效的字段或运算符。")
