@@ -30,7 +30,7 @@ def parse_num_votes(num_votes):
 
 try:
     # 读取 JSON 文件
-    with open('./sample/test.json', 'r', encoding='utf-8') as file:
+    with open('./sample/2019_sample.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
 
     # 连接到 MySQL 数据库

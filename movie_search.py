@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from flask_cors import CORS
 import logging
+from database import Database
 
 app = Flask(__name__)
 CORS(app)  # 启用CORS支持
@@ -13,19 +14,9 @@ CORS(app)  # 启用CORS支持
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class MovieDatabase:
-    def __init__(self):
-        self.conn = mysql.connector.connect(
-            host='localhost',
-            user='root',
-            password='Cyl200124@',
-            database='movie_search'
-        )
-        self.cursor = self.conn.cursor(dictionary=True)
-
-    def close(self):
-        self.cursor.close()
-        self.conn.close()
+class MovieSearch:
+    def __init__(self, db: Database):
+        self.db = db
 
     def parse_query(self, query: str) -> Dict[str, str]:
         """解析用户输入的查询字符串"""
@@ -54,7 +45,6 @@ class MovieDatabase:
         
         return fields
 
-
     def search_movies(self, query: str, page: int = 1, page_size: int = 50) -> Dict[str, Any]:
         """
         搜索电影
@@ -66,8 +56,6 @@ class MovieDatabase:
         parsed_query = self.parse_query(query)
         offset = (page - 1) * page_size
         
-
-
         base_sql = """
             SELECT DISTINCT 
                 movies.id,
@@ -152,13 +140,13 @@ class MovieDatabase:
         ]
         
         # 执行计数查询
-        self.cursor.execute(count_sql, params)
-        total = self.cursor.fetchone()['total']
+        self.db.cursor.execute(count_sql, params)
+        total = self.db.cursor.fetchone()['total']
         
         # 执行主查询
         all_params = score_params + params + [page_size, offset]
-        self.cursor.execute(base_sql, all_params)
-        results = self.cursor.fetchall()
+        self.db.cursor.execute(base_sql, all_params)
+        results = self.db.cursor.fetchall()
         
         # 处理日期格式
         for movie in results:
@@ -172,7 +160,6 @@ class MovieDatabase:
             'total_pages': (total + page_size - 1) // page_size,
             'results': results
         }
-
     def get_movie_recommendations(self, 
                                 category: str = None, 
                                 sort_by: str = 'score', 
@@ -232,8 +219,8 @@ class MovieDatabase:
             count_sql += " AND genres.name = %s"
         
         # 执行计数查询
-        self.cursor.execute(count_sql, params)
-        total = self.cursor.fetchone()['total']
+        self.db.cursor.execute(count_sql, params)
+        total = self.db.cursor.fetchone()['total']
         
         # 添加分组和排序
         base_sql += f"""
@@ -244,8 +231,8 @@ class MovieDatabase:
         
         # 执行主查询
         all_params = params + [page_size, offset]
-        self.cursor.execute(base_sql, all_params)
-        results = self.cursor.fetchall()
+        self.db.cursor.execute(base_sql, all_params)
+        results = self.db.cursor.fetchall()
         
         # 处理日期格式
         for movie in results:
@@ -262,49 +249,11 @@ class MovieDatabase:
 
     def get_genres(self) -> List[str]:
         """获取所有电影类型"""
-        self.cursor.execute("SELECT DISTINCT name FROM genres ORDER BY name")
-        return [row['name'] for row in self.cursor.fetchall()]
-
-    def _ensure_fulltext_indexes(self):
-        """确保必要的全文索引存在"""
-        try:
-            # 检查索引是否存在
-            self.cursor.execute("""
-                SELECT INDEX_NAME 
-                FROM information_schema.STATISTICS 
-                WHERE TABLE_SCHEMA = 'movie_search' 
-                AND TABLE_NAME = 'movies' 
-                AND INDEX_NAME = 'idx_title_plot'
-            """)
-            
-            if not self.cursor.fetchone():
-                # 为movies表添加全文索引
-                self.cursor.execute("""
-                    ALTER TABLE movies 
-                    ADD FULLTEXT INDEX idx_title_plot (title, plot)
-                """)
-                
-            self.cursor.execute("""
-                SELECT INDEX_NAME 
-                FROM information_schema.STATISTICS 
-                WHERE TABLE_SCHEMA = 'movie_search' 
-                AND TABLE_NAME = 'actors' 
-                AND INDEX_NAME = 'idx_actor_name'
-            """)
-            
-            if not self.cursor.fetchone():
-                # 为actors表添加全文索引
-                self.cursor.execute("""
-                    ALTER TABLE actors 
-                    ADD FULLTEXT INDEX idx_actor_name (name)
-                """)
-                
-            self.conn.commit()
-        except mysql.connector.Error as err:
-            logger.error(f"创建索引时出错: {err}")
+        self.db.cursor.execute("SELECT DISTINCT name FROM genres ORDER BY name")
+        return [row['name'] for row in self.db.cursor.fetchall()]
 
 # 创建数据库连接池
-db = MovieDatabase()
+db = Database()
 
 # 搜索电影
 @app.route('/api/search', methods=['GET'])
@@ -314,7 +263,8 @@ def search():
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 50))
         
-        results = db.search_movies(query, page, page_size)
+        search_instance = MovieSearch(db)
+        results = search_instance.search_movies(query, page, page_size)
         return jsonify(results)
     except Exception as e:
         logger.error(f"Search error: {str(e)}")
@@ -329,7 +279,8 @@ def get_movies():
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 20))
         
-        results = db.get_movie_recommendations(category, sort_by, page, page_size)
+        search_instance = MovieSearch(db)
+        results = search_instance.get_movie_recommendations(category, sort_by, page, page_size)
         return jsonify(results)
     except Exception as e:
         logger.error(f"Get movies error: {str(e)}")
@@ -339,7 +290,8 @@ def get_movies():
 @app.route('/api/genres', methods=['GET'])
 def get_genres():
     try:
-        genres = db.get_genres()
+        search_instance = MovieSearch(db)
+        genres = search_instance.get_genres()
         return jsonify({'genres': genres})
     except Exception as e:
         logger.error(f"Get genres error: {str(e)}")
