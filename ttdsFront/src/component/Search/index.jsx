@@ -1,6 +1,6 @@
 import React, { useState, useEffect} from 'react';
-import { Input, Button, Card, Pagination ,AutoComplete} from 'antd';
-import { UserOutlined } from '@ant-design/icons';
+import { Input, Button, Card, Pagination ,AutoComplete, Tooltip} from 'antd';
+import { UserOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import './index.css';
 import { fetchMovies, searchTrie } from '../../util/trie_auto';
 
@@ -67,45 +67,52 @@ const Search = ({onSearch}) => {
 
     return (
         <div>
-            <AutoComplete  type="text" 
-                                style={{
-                                    width: "80vw"
-                                  }}
-                                onSearch={handleAutoComplete}
-                                onSelect={handleSelect}
-                                options={suggestions}
-                                placeholder="Search TMD Ed" 
-                                prefix={<UserOutlined />} />
-                        <br/><br/>
-
-            <Button type="primary" onClick={() => handleSearch(1)}>TMD Search</Button><br/>
-
-            <ul>
-                {currentResults.map((movie, index) => (
-                    <Card key={index} className='card'>
-                        <img src={movie.poster} className="img" /><br/>
-                        <div className="card-content">
-                            <a
-                                href={movie.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="card-title">
-                                {movie.title}
-                            </a>
-                            <p className="card-date">{movie.release_date}</p>
-                            <p className="card-plot">{movie.plot}</p>
-                        </div>
-                    </Card>
-                ))}
-            </ul>
+            <div className='search-container'>
+                <AutoComplete  className='search-input' type="text" 
+                                    style={{
+                                        width: "80vw"
+                                    }}
+                                    onSearch={handleAutoComplete}
+                                    onSelect={handleSelect}
+                                    options={suggestions}
+                                    placeholder="Search TMD Ed" 
+                                    prefix={<UserOutlined />} />
+            
+                <div className="button-icon-wrapper">
+                    <Button className='search-button' type="primary" onClick={() => handleSearch(1)}>TMD Search</Button>
+                    <Tooltip placement="top" title="请输入你想要搜索的电影名称">
+                        <InfoCircleOutlined  className='search-tooltip-icon'/>
+                    </Tooltip>
+                </div>
+            </div>
+            <div className="movies-list">
+                    {currentResults.map((movie, index) => (
+                                        <Card key={index} className='movie-card'>
+                                            <img src={movie.poster} className="movie-poster" /><br/>
+                                            <div className="movie-content">
+                                                <a
+                                                    href={movie.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="movie-title">
+                                                    {movie.title}
+                                                </a>
+                                                <p className="movie-date">{movie.release_date}</p>
+                                                <p className="movie-plot">{movie.plot}</p>
+                                            </div>
+                                        </Card>
+                    ))}
+            </div>
+            
+                  
             {showPagination && (<Pagination
-                className="pagination-container"
-                current={currentPage}
-                pageSize={searchResults.page_size}
-                total={searchResults.total}
-                onChange={handlePageChange}
-                showSizeChanger={false}
-            />
+                    className="pagination-container"
+                    current={currentPage}
+                    pageSize={searchResults.page_size}
+                    total={searchResults.total}
+                    onChange={handlePageChange}
+                    showSizeChanger={false}
+                />
             )}
         </div>
     );

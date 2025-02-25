@@ -104,18 +104,18 @@ const Movies = () => {
 
       <div className="movies-list">
         {currentMovies.map((movie, index) => (
-                            <Card key={index} className='card'>
-                                <img src={movie.poster} className="img" /><br/>
-                                <div className="card-content">
+                            <Card key={index} className='movie-card'>
+                                <img src={movie.poster} className="movie-poster" /><br/>
+                                <div className="movie-content">
                                     <a
                                         href={movie.url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="card-title">
+                                        className="movie-title">
                                         {movie.title}
                                     </a>
-                                    <p className="card-date">{movie.release_date}</p>
-                                    <p className="card-plot">{movie.plot}</p>
+                                    <p className="movie-date">{movie.release_date}</p>
+                                    <p className="movie-plot">{movie.plot}</p>
                                 </div>
                             </Card>
         ))}
