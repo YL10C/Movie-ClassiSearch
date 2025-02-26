@@ -160,6 +160,7 @@ class MovieSearch:
             'total_pages': (total + page_size - 1) // page_size,
             'results': results
         }
+
     def get_movie_recommendations(self, 
                                 category: str = None, 
                                 sort_by: str = 'score', 
@@ -251,6 +252,11 @@ class MovieSearch:
         """获取所有电影类型"""
         self.db.cursor.execute("SELECT DISTINCT name FROM genres ORDER BY name")
         return [row['name'] for row in self.db.cursor.fetchall()]
+
+    def search_movie_ids(self, query: str, limit: int = 1000) -> List[int]:
+        """搜索电影ID列表"""
+        result = self.search_movies(query, page=1, page_size=limit)
+        return [movie['id'] for movie in result.get('results', [])]
 
 # 创建数据库连接池
 db = Database()

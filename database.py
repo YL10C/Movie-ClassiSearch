@@ -14,7 +14,8 @@ class Database:
             host='localhost',
             user='root',
             password='Cyl200124@',
-            database='movie_search'
+            database='movie_search',
+            buffered=True
         )
         self.cursor = self.conn.cursor(dictionary=True)
         self._ensure_fulltext_indexes()
