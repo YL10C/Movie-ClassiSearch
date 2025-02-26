@@ -1,6 +1,8 @@
+from collections import defaultdict
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
+from SearchModule.models import TFIDFRetrieval
 from database import Database
 from movie_search import MovieSearch
 from SearchModule.search import QueryProcessor
@@ -23,11 +25,23 @@ movie_search = MovieSearch(db)  # 电影搜索服务
 # 初始化搜索相关组件（在Flask应用初始化之后）
 search_preprocessor = TextPreprocessor(remove_stop_words=True, apply_stemming=True)
 index = PositionalInvertedIndex() 
-movie_index = index.load_index('D:\OneDrive\文档\Yilin\Edinburgh\Text Technologies\Movie-ClassiSearch\SearchModule\index.txt')
+index.load_index('D:\OneDrive\文档\Yilin\Edinburgh\Text Technologies\Movie-ClassiSearch\SearchModule\index.txt')
 query_processor = QueryProcessor(
     preprocessor=search_preprocessor,
     index=index
 )
+# 创建统一的检索索引（合并所有字段）
+retrieval_index = defaultdict(lambda: defaultdict(list))
+
+# 遍历多字段索引结构 {field: {term: {docID: [positions]}}}
+for field, terms in index.index.items():
+    for term, doc_dict in terms.items():
+        for doc_id, positions in doc_dict.items():
+            # 将不同字段的相同term合并到统一索引
+            retrieval_index[term][doc_id].extend(positions)
+
+# 创建TF-IDF检索对象
+retrieval = TFIDFRetrieval(retrieval_index, search_preprocessor)
 
 @app.route('/api/search', methods=['GET'])
 def search():
@@ -106,8 +120,8 @@ def advanced_search():
             raw_results = query_processor.query(query)  # 返回ID列表
         else:
             # 使用普通搜索获取ID列表
-            search_data = movie_search.search_movies(query, 1, 1000)
-            raw_results = [movie['id'] for movie in search_data.get('results', [])]
+            retrieval_results = retrieval.compute_tfidf_scores(query)
+            raw_results = [result[0] for result in retrieval_results]
 
         # 统一获取详细信息
         if raw_results:

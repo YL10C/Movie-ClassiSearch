@@ -1,6 +1,8 @@
+from collections import defaultdict
 from preprocessor import TextPreprocessor
 from indexer import PositionalInvertedIndex
 from search import QueryProcessor
+from models import TFIDFRetrieval
 
 #movie_search/
 #│
@@ -55,18 +57,31 @@ if __name__ == "__main__":
     #         print(f"未找到 {year} 年的数据文件")
     #         continue
 
-    # documents = preprocessor.process_file(f'sample/2024_sample.json')
+    documents = preprocessor.process_file(f'sample/2024_sample.json')
     # index.build_index(documents)
     # # 保存完整的索引到文件
     # index.save_index('SearchModule\\index.txt')
     # 加载现有索引
     index.load_index('SearchModule\\index.txt')
 
+    # 创建统一的检索索引（合并所有字段）
+    retrieval_index = defaultdict(lambda: defaultdict(list))
+    
+    # 遍历多字段索引结构 {field: {term: {docID: [positions]}}}
+    for field, terms in index.index.items():
+        for term, doc_dict in terms.items():
+            for doc_id, positions in doc_dict.items():
+                # 将不同字段的相同term合并到统一索引
+                retrieval_index[term][doc_id].extend(positions)
+
+    # 创建TF-IDF检索对象
+    retrieval = TFIDFRetrieval(retrieval_index, preprocessor)
+
     # 创建查询处理对象
     query_processor = QueryProcessor(index, preprocessor)
 
     # 简单普通查询示例
-    simple_query = r'title:Taitoru, kyozetsu AND "Follows a group"'
+    simple_query = r'Taitoru, kyozetsu Follows a group'
     
     # 判断查询语句是否包含字段限定符、布尔运算符或引号
     if any(field in simple_query for field in ['title:', 'director:', 'plot:', 'cast:']) or \
@@ -75,4 +90,6 @@ if __name__ == "__main__":
         simple_results = query_processor.query(simple_query)
         print("简单查询结果:", simple_results)
     else:
-        print("查询语句不包含有效的字段或运算符。")
+        retrieval_results = retrieval.compute_tfidf_scores(simple_query)
+        print("TF-IDF检索结果:", retrieval_results)
+
