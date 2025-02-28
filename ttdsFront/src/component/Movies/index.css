@@ -1,42 +1,29 @@
 /* Movies.css */
-.search-container {
+
+.movies-container {
+  margin: 40px auto;
+  max-width: 1200px;
+  padding: 0 20px;
+}
+
+.filters {
   display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 15px;
+  margin-bottom: 30px;
 }
 
-.search-input {
-  width: 1000px;
-}
-.button-icon-wrapper {
-  display: flex; /* 使按钮和图标在同一行 */
-  align-items: center;
-  gap: 8px;
-}
-
-.search-button{
-  background-color: #1890ff;
-  color: white;
-  border: none;
-  padding: 8px 16px;
+.filter-select {
+  width: 180px;
   border-radius: 6px;
-  cursor: pointer;
-  
-}
-.search-tooltip-icon {
-  cursor: pointer;
-  color: #1890ff;
-  font-size: 28px;
+  padding: 5px;
+  border: 1px solid #ddd;
 }
 
 .movies-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 25px;
-  margin-top: 50px;
 }
 
 .movie-card {

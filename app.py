@@ -74,7 +74,7 @@ def get_movies():
     - page_size: 每页结果数（默认20）
     """
     try:
-        category = request.args.get('category')
+        category = request.args.get('category', 'Action')
         sort_by = request.args.get('sort_by', 'score')
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 20))
@@ -112,7 +112,7 @@ def advanced_search():
         has_advanced = any(
             field in query for field in ['title:', 'director:', 'plot:', 'cast:']
         ) or any(
-            op in query.upper() for op in [' AND ', ' OR ']
+            op in query for op in [' AND ', ' OR ']
         ) or '"' in query
 
         # 获取原始结果（ID列表）

@@ -1,18 +1,24 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import Search from './component/Search'
+import React, { useState } from "react";
+import Search from "./component/Search";
+import Movies from "./component/Movies";
 
-import './App.css'
+import "./App.css";
 
-function App() {
+const App = () => {
+  const [showMovies, setShowMovies] = useState(true); // 控制 Movies 是否显示
+
+  const isSearch = () => {
+    setShowMovies(false); // 当搜索时隐藏 Movies
+  };
+
 
   return (
     <div>
-      <h1>Movie Search</h1>
-      <Search />
+      <h1>Ed TMD </h1>
+      <Search onSearch={isSearch} />
+      {showMovies && <Movies />} {/* 根据 showMovies 显示或隐藏 Movies */}
     </div>
-  )
-}
+  );
+};
 
-export default App
+export default App;
